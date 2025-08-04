@@ -42,7 +42,7 @@ def main():
     print("데이터셋 로딩 중... (첫 실행 시 시간이 걸릴 수 있습니다)")
     dataset = SISRDataset(hr_dir=HR_DATA_DIR, scale_factor=SCALE_FACTOR, patch_size_lr=PATCH_SIZE_LR)
     # num_workers: 데이터를 불러올 때 사용할 프로세스 수. 컴퓨터 환경에 맞게 조절하세요.
-    data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, pin_memory=True)
+    data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=12, pin_memory=True)
     print("데이터셋 로딩 완료!")
 
     # 모델 인스턴스 생성 및 장치로 이동

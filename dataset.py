@@ -76,6 +76,8 @@ class ToNumpy:
 class GenerateLR:
     def __init__(self, scale_factor):
         self.scale_factor = scale_factor
+        self.kernel_size = 20
+        self.pad_size = (self.kernel_size - self.scale_factor) // 2
 
     # __call__ 메소드를 구현하면 이 클래스의 객체를 함수처럼 호출할 수 있습니다. (예: transform(image))
     def __call__(self, hr_img_np):
@@ -89,8 +91,13 @@ class GenerateLR:
         # 3. HR 이미지의 각 채널(R, G, B)에 다운샘플링 커널을 적용합니다.
         lr_channels = []
         for i in range(hr_img_np.shape[2]):  # R, G, B 채널 순회
+            # 컨볼루션 전에 대칭 패딩 추가
+            # np.pad를 사용해 상하(pad_size), 좌우(pad_size)에 대칭(symmetric) 패딩을 추가합니다.
+            hr_channel = hr_img_np[:, :, i]
+            hr_channel_padded = np.pad(hr_channel, self.pad_size, 'symmetric')
+
             # HR 이미지와 커널을 합성곱합니다.
-            lr_channel = convolve2d(hr_img_np[:, :, i], downsampling_k, mode='valid')
+            lr_channel = convolve2d(hr_channel_padded, downsampling_k, mode='valid')
             # scale_factor 만큼의 간격으로 픽셀을 샘플링하여 다운샘플링을 수행합니다.
             lr_channel = lr_channel[::self.scale_factor, ::self.scale_factor]
             lr_channels.append(lr_channel)
@@ -133,6 +140,11 @@ class SISRDataset(Dataset):
 
         # 3. HR 패치(NumPy)를 입력으로 하여 LR 패치(NumPy)를 생성합니다.
         lr_patch_np = self.lr_generator(hr_patch_np)
+
+        # 텐서로 변환하기 전, NumPy 배열 타입을 float32로 명시합니다.
+        # error 해결: TypeError: Cannot convert a MPS Tensor to float64 dtype as the MPS framework doesn't support float64. Please use float32 instead.
+        hr_patch_np = hr_patch_np.astype(np.float32)
+        lr_patch_np = lr_patch_np.astype(np.float32)
 
         # 4. 두 NumPy 배열을 각각 PyTorch 텐서로 변환하고 [-1, 1]로 정규화합니다.
         hr_patch = self.tensor_transform(hr_patch_np)
