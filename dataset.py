@@ -67,6 +67,9 @@ def random_anisotropic_gaussian_kernel(size=15, sig_min=0.2, sig_max=4.0):
     # 합이 1이 되도록 정규화합니다.
     return kernel / np.sum(kernel)
 
+class ToNumpy:
+    def __call__(self, pil_img):
+        return np.array(pil_img)
 
 # --- 논문의 Degradation을 수행하는 커스텀 Transform 클래스 ---
 # PyTorch의 transform 파이프라인에 포함시키기 위해 클래스로 구현합니다.
@@ -109,7 +112,7 @@ class SISRDataset(Dataset):
         # HR 이미지 전처리: 랜덤 크롭 후 NumPy 배열로 변환
         self.hr_base_transform = transforms.Compose([
             transforms.RandomCrop(self.patch_size_hr),
-            transforms.Lambda(lambda img: np.array(img))
+            ToNumpy()
         ])
 
         # LR 이미지 생성기: 위에서 정의한 커스텀 Transform 클래스
