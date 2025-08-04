@@ -117,7 +117,11 @@ class UpsamplingBaselineNetwork(nn.Module):
                 nn.ReLU(),
                 nn.PixelShuffle(2) # 16 채널
             ])
-        residual_layers.append(nn.Conv2d(16, channels, kernel_size=3, padding=1)) # 3 채널
+        if scale_factor == 4:
+            final_in_channels = 16
+        else:
+            final_in_channels = 32
+        residual_layers.append(nn.Conv2d(final_in_channels, channels, kernel_size=3, padding=1)) # 3 채널
         self.residual_branch = nn.Sequential(*residual_layers)
 
         # 3. 업샘플링 커널 브랜치 (upsampling kernel branch)
