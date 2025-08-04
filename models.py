@@ -2,6 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def kernel_normalize_pytorch(kernel, kernel_size):
+    """
+    커널의 합을 1로 정규화합니다.
+    kernel shape: [B, k*k, s*s, H, W]
+    """
+    # k*k 차원(dim=1)을 기준으로 평균을 계산합니다.
+    kernel_mean = torch.mean(kernel, dim=1, keepdim=True)
+    kernel = kernel - kernel_mean
+    kernel = kernel + 1.0 / (kernel_size * kernel_size)
+    return kernel
+
 class ResBlock(nn.Module):
     def __init__(self, channels):
         super().__init__()
