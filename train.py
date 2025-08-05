@@ -25,17 +25,18 @@ class EpochBasedSampler(Sampler):
 
 # --- 1. 하이퍼파라미터 및 설정 ---
 # preprocssed image dataset 쓸 때는 안 쓰는 변수
-# HR_DATA_DIR = './data/DIV2K_train_HR'
+HR_DATA_DIR = './data/DIV2K_train_HR'
 
 # with preprocessed patch
-LR_PREPROCESSED_DIR = './data/train_preprocessed/lr'
-HR_PREPROCESSED_DIR = './data/train_preprocessed/hr'
+# LR_PREPROCESSED_DIR = './data/train_preprocessed/lr'
+# HR_PREPROCESSED_DIR = './data/train_preprocessed/hr'
 MODEL_SAVE_PATH = './koalanet_baseline_x4_final.pth'
 
 SCALE_FACTOR = 4
 PATCH_SIZE_LR = 64
 BATCH_SIZE = 8
-EPOCHS = 200  # 논문에서는 200k
+EPOCHS = 200 # 논문에서는 총 iteration이 200k
+UPDATES_PER_EPOCH = 100 # TF 원본 코드의 1 에포크당 업데이트 횟수
 LEARNING_RATE = 1e-4
 
 # 논문의 학습률 감소 정책 (80%, 90% 지점에서 1/10로 감소)
@@ -57,8 +58,8 @@ def main():
 
     # 데이터셋 및 데이터로더 설정
     print("데이터셋 로딩 중... (첫 실행 시 시간이 걸릴 수 있습니다)")
-    # dataset = SISRDataset(hr_dir=HR_DATA_DIR, scale_factor=SCALE_FACTOR, patch_size_lr=PATCH_SIZE_LR) # preprocessed image data set 사용할 때는 X
-    dataset = SISRDataset(lr_dir=LR_PREPROCESSED_DIR, hr_dir=HR_PREPROCESSED_DIR)
+    dataset = SISRDataset(hr_dir=HR_DATA_DIR, scale_factor=SCALE_FACTOR, patch_size_lr=PATCH_SIZE_LR) # preprocessed image data set 사용할 때는 X
+    # dataset = SISRDataset(lr_dir=LR_PREPROCESSED_DIR, hr_dir=HR_PREPROCESSED_DIR)
 
     # 원본 TF 코드의 1 에포크당 업데이트 횟수(100)를 기준으로 샘플러 생성
     # 1 에포크당 100번 업데이트 * 배치크기 8 = 800개 샘플
