@@ -124,11 +124,12 @@ class SISRDataset(Dataset):
         ])
 
     def __getitem__(self, index):
-        # ❗️ Sampler가 준 index는 무시하고, 매번 전체 800개 이미지 중 하나를 랜덤으로 선택
+        # Sampler가 준 index는 무시하고, 매번 전체 800개 이미지 중 하나를 랜덤으로 선택
         random_hr_path = random.choice(self.hr_image_paths)
 
         # 1. HR 이미지를 PIL 형태로 불러옵니다.
-        hr_image_pil = Image.open(self.hr_image_paths[index]).convert('RGB')
+        hr_image_pil = Image.open(random_hr_path).convert('RGB')
+        # hr_image_pil = Image.open(self.hr_image_paths[index]).convert('RGB')
 
         # 2. HR 이미지에서 HR 패치를 랜덤하게 잘라내고 NumPy 배열로 변환합니다.
         hr_patch_np = self.hr_base_transform(hr_image_pil)

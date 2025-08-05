@@ -13,6 +13,7 @@ def kernel_normalize(kernel, kernel_size):
     kernel = kernel + 1.0 / (kernel_size * kernel_size)
     return kernel
 
+""" LR에 F_u로 local filtering -> HR prediction 만들기 """
 def local_conv_us(img, kernel, scale, kernel_size):
     """
     PyTorch 버전의 local_conv_us (커널 정규화 포함).
@@ -75,6 +76,7 @@ def local_conv_us(img, kernel, scale, kernel_size):
 
     return output
 
+""" HR에 F_d로 local filtering -> LR prediction 만들기"""
 def local_conv_ds(img, kernel, scale, kernel_size):
     """
     예측된 커널로 HR 이미지를 다운샘플링하여 LR 이미지를 재구성
@@ -92,6 +94,22 @@ def local_conv_ds(img, kernel, scale, kernel_size):
     # 이미지 패치와 커널을 곱하고, 패치 차원(dim=2)으로 합산합니다.
     result = torch.sum(img_patches * kernel, dim=2)
 
+    return result
+
+""" koala module 내부에서 parameter k 생성할 때 로컬 필터링 """
+def local_conv_feat(img, kernel, kernel_size):
+    batch_size, channels, height, width = img.shape
+
+    # stride=1, padding='SAME'으로 패치 추출
+    img_patches = F.unfold(img, kernel_size=kernel_size, padding=(kernel_size - 1) // 2)
+    img_patches = img_patches.view(batch_size, channels, kernel_size * kernel_size, height, width)
+
+    # 커널은 채널별로 동일하게 적용되므로, 채널 축을 추가하여 브로드캐스팅 준비
+    # [B, k*k, H, W] -> [B, 1, k*k, H, W]
+    kernel = kernel.view(batch_size, 1, kernel_size * kernel_size, height, width)
+
+    # 이미지 패치와 커널을 곱하고, 패치 차원(dim=2)으로 합산
+    result = torch.sum(img_patches * kernel, dim=2)
     return result
 
 class ResBlock(nn.Module):
@@ -147,6 +165,53 @@ class DecoderBlock(nn.Module):
         x = self.res_block2(x)
         x = self.relu(x)
         return x
+
+""" KOALA moudle """
+class KOALAModule(nn.Module):
+    def __init__(self, feat_channels=64, kernel_feat_channels=64, local_kernel_size=7):
+        super().__init__()
+
+        # 1. 입력 특징(x)을 처리하는 ResBlock 스타일의 경로
+        self.feature_path = nn.Sequential(
+            nn.ReLU(),
+            nn.Conv2d(feat_channels, feat_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(feat_channels, feat_channels, kernel_size=3, padding=1)
+        )
+
+        # 2. 커널 특징(f_d)으로부터 곱셈 파라미터(m)를 생성하는 경로
+        self.multiplicative_path = nn.Sequential(
+            nn.Conv2d(kernel_feat_channels, feat_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(feat_channels, feat_channels, kernel_size=3, padding=1)
+        )
+
+        # 3. 커널 특징(f_d)으로부터 로컬 필터(k)를 생성하는 경로
+        self.local_filter_path = nn.Sequential(
+            # 1x1 Conv를 사용하여 공간적 정보를 섞지 않음
+            nn.Conv2d(kernel_feat_channels, feat_channels, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(feat_channels, local_kernel_size ** 2, kernel_size=1)
+            # normalize는? forward에서 수행
+        )
+
+        self.local_kernel_size = local_kernel_size
+
+    def forward(self, x, kernel_features):
+        # 입력 특징(x)과 커널 특징(f_d)을 각각의 경로로 전달
+        feature_processed = self.feature_path(x)
+        multiplicative_params = self.multiplicative_path(kernel_features)
+        local_filter_params = self.local_filter_path(kernel_features)
+        local_filter_params = kernel_normalize(local_filter_params, self.local_kernel_size) # 커널 정규화
+
+        # 1. 곱셈(element-wise multiplication)으로 특징 조정
+        feature_multiplied = feature_processed * multiplicative_params
+
+        # 2. 로컬 필터링으로 특징 조정
+        feature_filtered = local_conv_feat(feature_multiplied, local_filter_params, self.local_kernel_size)
+
+        # 3. 잔차 연결 (Residual Connection)
+        return x + feature_filtered
 
 """ Training Stage 1 """
 class DownsamplingNetwork(nn.Module):
@@ -258,6 +323,79 @@ class UpsamplingBaselineNetwork(nn.Module):
         # 3. local filtering 실행 및 잔차 이미지 더하기
         # 주의: local_conv_us는 원본 LR 이미지(x)를 입력으로 받음
         upsampled_img = local_conv_us(x, upsampling_kernel, self.scale_factor, self.up_kernel_size)
+        sr_image = upsampled_img + residual_img
+
+        return sr_image
+
+""" Training Stage 3 """
+class UpsamplingNetwork(nn.Module):
+    def __init__(self, scale_factor=4, channels=3, num_res_blocks=12):
+        super().__init__()
+        self.scale_factor = scale_factor
+        self.up_kernel_size = 5
+        ch = 64
+
+        # 1. Downsampling Network의 커널 특징을 처리하는 부분
+        self.kernel_feature_extractor = nn.Sequential(
+            nn.Conv2d(20 ** 2, ch, kernel_size=3, padding=1), # DOWNSAMPLING_KERNEL_SIZE = 20
+            nn.ReLU(),
+            nn.Conv2d(ch, ch, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(ch, ch, kernel_size=3, padding=1),
+            nn.ReLU()
+        )
+
+        # 2. LR 이미지의 초기 특징 추출
+        self.initial_conv = nn.Conv2d(channels, ch, kernel_size=3, padding=1)
+
+        # 3. 5개의 KOALA 모듈과 7개의 ResBlock
+        self.koala_blocks = nn.ModuleList([KOALAModule() for _ in range(5)])
+        self.res_blocks = nn.ModuleList([ResBlock(ch) for _ in range(7)])
+
+        # 4. 브랜치가 나뉘기 전 마지막 ReLU
+        self.final_relu = nn.ReLU()
+
+        # 5. 잔차 이미지 브랜치 (UpsamplingBaselineNetwork와 동일)
+        final_in_channels = 16 if scale_factor == 4 else 32
+        self.residual_branch = nn.Sequential(
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.PixelShuffle(2),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
+            nn.PixelShuffle(2),
+            nn.Conv2d(in_channels=final_in_channels, out_channels=channels, kernel_size=3, padding=1)
+        )
+
+        # 6. 업샘플링 커널 브랜치 (UpsamplingBaselineNetwork와 동일)
+        output_channels = self.up_kernel_size * self.up_kernel_size * scale_factor * scale_factor
+        self.kernel_branch = nn.Sequential(
+            nn.Conv2d(ch, ch * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(ch * 2, output_channels, kernel_size=3, padding=1)
+        )
+
+    def forward(self, lr_img, downsampling_kernel_map):
+        # Downsampling Network가 예측한 커널 맵에서 특징(f_d) 추출
+        kernel_features = self.kernel_feature_extractor(downsampling_kernel_map)
+
+        # LR 이미지에서 초기 특징(x) 추출
+        net = self.initial_conv(lr_img)
+
+        # 5개의 KOALA 모듈 통과
+        for i in range(5):
+            net = self.koala_blocks[i](net, kernel_features)
+
+        # 7개의 ResBlock 통과
+        for i in range(7):
+            net = self.res_blocks[i](net)
+
+        shared_features = self.final_relu(net)
+
+        # 이후는 UpsamplingBaselineNetwork와 동일
+        residual_img = self.residual_branch(shared_features)
+        upsampling_kernel = self.kernel_branch(shared_features)
+        upsampled_img = local_conv_us(lr_img, upsampling_kernel, self.scale_factor, self.up_kernel_size)
         sr_image = upsampled_img + residual_img
 
         return sr_image
