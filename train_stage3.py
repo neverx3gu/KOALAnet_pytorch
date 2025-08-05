@@ -54,7 +54,7 @@ def main():
 
     data_loader = DataLoader(
         dataset, batch_size=BATCH_SIZE, sampler=epoch_sampler,
-        shuffle=False, num_workers=8, pin_memory=False, persistent_workers=True
+        shuffle=False, num_workers=12, pin_memory=False, persistent_workers=True
     )
 
     # 두 개의 네트워크를 모두 생성합니다.
