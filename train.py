@@ -73,7 +73,7 @@ def main():
         batch_size=BATCH_SIZE,
         sampler=epoch_sampler, # 커스텀 샘플러 지정
         shuffle=False, # Sampler 사용 시 반드시 False
-        num_workers=12,
+        num_workers=8,
         pin_memory=False,
         persistent_workers=True
     )
