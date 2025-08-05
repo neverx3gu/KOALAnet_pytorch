@@ -4,26 +4,26 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-# 저희가 직접 만든 모듈들을 불러옵니다.
 from models import UpsamplingBaselineNetwork
 from dataset import SISRDataset
 
 # --- 1. 하이퍼파라미터 및 설정 ---
-# 논문과 최대한 유사하게 설정합니다.
+# preprocssed image dataset 쓸 때는 안 쓰는 변수
 HR_DATA_DIR = './data/DIV2K_train_HR'
+# # with preprocessed patch
+# LR_PREPROCESSED_DIR = './data/train_preprocessed/lr'
+# HR_PREPROCESSED_DIR = './data/train_preprocessed/hr'
 MODEL_SAVE_PATH = './koalanet_baseline_x4_final.pth'
 
 SCALE_FACTOR = 4
 PATCH_SIZE_LR = 64
 BATCH_SIZE = 8
-EPOCHS = 200  # 논문에서는 200k iteration을 제안했지만, 우선 200 에포크로 설정합니다.
+EPOCHS = 200  # 논문에서는 200k
 LEARNING_RATE = 1e-4
 
 # 논문의 학습률 감소 정책 (80%, 90% 지점에서 1/10로 감소)
-# 200 에포크 기준: 160, 180 에포크
 LR_DECAY_MILESTONES = [0.8*EPOCHS, 0.9*EPOCHS]
 LR_DECAY_FACTOR = 0.1
-
 
 def main():
     # --- 2. 훈련 준비 ---
@@ -40,9 +40,11 @@ def main():
 
     # 데이터셋 및 데이터로더 설정
     print("데이터셋 로딩 중... (첫 실행 시 시간이 걸릴 수 있습니다)")
-    dataset = SISRDataset(hr_dir=HR_DATA_DIR, scale_factor=SCALE_FACTOR, patch_size_lr=PATCH_SIZE_LR)
-    # num_workers: 데이터를 불러올 때 사용할 프로세스 수. 컴퓨터 환경에 맞게 조절하세요.
-    data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=12, pin_memory=True)
+    dataset = SISRDataset(hr_dir=HR_DATA_DIR, scale_factor=SCALE_FACTOR, patch_size_lr=PATCH_SIZE_LR) # preprocessed image data set 사용할 때는 X
+    # dataset = SISRDataset(lr_dir=LR_PREPROCESSED_DIR, hr_dir=HR_PREPROCESSED_DIR)
+
+    # num_workers: 데이터를 불러올 때 사용할 프로세스 수
+    data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=12, pin_memory=False, persistent_workers=True) # mps는 pin_memory=True 지원하지 않음
     print("데이터셋 로딩 완료!")
 
     # 모델 인스턴스 생성 및 장치로 이동
@@ -62,7 +64,7 @@ def main():
         model.train()  # 모델을 훈련 모드로 설정
 
         # tqdm을 사용하여 배치 진행률 표시
-        progress_bar = tqdm(data_loader, desc=f"에포크 [{epoch + 1}/{EPOCHS}] LR={scheduler.get_last_lr()[0]:.1e}")
+        progress_bar = tqdm(data_loader, desc=f"epoch [{epoch + 1}/{EPOCHS}] LR={scheduler.get_last_lr()[0]:.1e}")
 
         total_loss = 0.0
 
@@ -74,11 +76,12 @@ def main():
             # 옵티마이저의 기울기를 0으로 초기화
             optimizer.zero_grad()
 
-            # 순전파(Forward pass): 모델에 LR 이미지를 입력하여 SR 이미지 생성
-            sr_imgs = model(lr_imgs)
-
-            # 손실 계산
-            loss = criterion(sr_imgs, hr_imgs)
+            # MPS 장치에 대해 autocast 활성화
+            with torch.autocast(device_type="mps"):
+                # 순전파(Forward pass): 모델에 LR 이미지를 입력하여 SR 이미지 생성
+                sr_imgs = model(lr_imgs)
+                # 손실 계산
+                loss = criterion(sr_imgs, hr_imgs)
 
             # 역전파(Backward pass): 손실에 대한 기울기 계산
             loss.backward()
@@ -91,7 +94,7 @@ def main():
             # 진행률 표시줄에 현재 평균 손실 업데이트
             progress_bar.set_postfix(loss=total_loss / (progress_bar.n + 1))
 
-        # 에포크가 끝나면 스케줄러를 업데이트합니다.
+        # 에포크가 끝나면 스케줄러를 업데이트
         scheduler.step()
 
     # --- 4. 훈련 종료 및 모델 저장 ---
