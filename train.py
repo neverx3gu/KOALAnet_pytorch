@@ -3,16 +3,33 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from torch.utils.data import Sampler
 
 from models import UpsamplingBaselineNetwork
 from dataset import SISRDataset
 
+# 1 epoch 당 정해진 수의 샘플만 무작위로 추출하는 샘플러 (TensorFlow의 'updates_per_epoch' 개념을 구현)
+class EpochBasedSampler(Sampler):
+    def __init__(self, data_source, num_samples_per_epoch):
+        self.data_source = data_source
+        self.num_samples_per_epoch = num_samples_per_epoch
+
+    def __iter__(self):
+        # 전체 데이터셋 인덱스에서 필요한 만큼만 무작위로 뽑음 (중복 허용)
+        indices = torch.randint(high=len(self.data_source), size=(self.num_samples_per_epoch,)).tolist()
+        return iter(indices)
+
+    def __len__(self):
+        # DataLoader가 1 에포크의 길이를 알 수 있도록 설정
+        return self.num_samples_per_epoch
+
 # --- 1. 하이퍼파라미터 및 설정 ---
 # preprocssed image dataset 쓸 때는 안 쓰는 변수
-HR_DATA_DIR = './data/DIV2K_train_HR'
-# # with preprocessed patch
-# LR_PREPROCESSED_DIR = './data/train_preprocessed/lr'
-# HR_PREPROCESSED_DIR = './data/train_preprocessed/hr'
+# HR_DATA_DIR = './data/DIV2K_train_HR'
+
+# with preprocessed patch
+LR_PREPROCESSED_DIR = './data/train_preprocessed/lr'
+HR_PREPROCESSED_DIR = './data/train_preprocessed/hr'
 MODEL_SAVE_PATH = './koalanet_baseline_x4_final.pth'
 
 SCALE_FACTOR = 4
@@ -40,11 +57,27 @@ def main():
 
     # 데이터셋 및 데이터로더 설정
     print("데이터셋 로딩 중... (첫 실행 시 시간이 걸릴 수 있습니다)")
-    dataset = SISRDataset(hr_dir=HR_DATA_DIR, scale_factor=SCALE_FACTOR, patch_size_lr=PATCH_SIZE_LR) # preprocessed image data set 사용할 때는 X
-    # dataset = SISRDataset(lr_dir=LR_PREPROCESSED_DIR, hr_dir=HR_PREPROCESSED_DIR)
+    # dataset = SISRDataset(hr_dir=HR_DATA_DIR, scale_factor=SCALE_FACTOR, patch_size_lr=PATCH_SIZE_LR) # preprocessed image data set 사용할 때는 X
+    dataset = SISRDataset(lr_dir=LR_PREPROCESSED_DIR, hr_dir=HR_PREPROCESSED_DIR)
 
-    # num_workers: 데이터를 불러올 때 사용할 프로세스 수
-    data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=12, pin_memory=False, persistent_workers=True) # mps는 pin_memory=True 지원하지 않음
+    # 원본 TF 코드의 1 에포크당 업데이트 횟수(100)를 기준으로 샘플러 생성
+    # 1 에포크당 100번 업데이트 * 배치크기 8 = 800개 샘플
+    num_samples_per_epoch = 100 * BATCH_SIZE
+    epoch_sampler = EpochBasedSampler(dataset, num_samples_per_epoch)
+
+    # DataLoader에 sampler를 지정하고, shuffle=False로 설정
+    # (Sampler가 이미 셔플링을 담당하므로 shuffle은 False여야 합니다.)
+    # mps는 pin_memory = True 지원하지 않음
+    data_loader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        sampler=epoch_sampler, # 커스텀 샘플러 지정
+        shuffle=False, # Sampler 사용 시 반드시 False
+        num_workers=8,
+        pin_memory=False,
+        persistent_workers=True
+    )
+
     print("데이터셋 로딩 완료!")
 
     # 모델 인스턴스 생성 및 장치로 이동

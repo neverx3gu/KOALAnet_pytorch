@@ -139,8 +139,8 @@
 #
 #         # 텐서로 변환하기 전, NumPy 배열 타입을 float32로 명시합니다.
 #         # error 해결: TypeError: Cannot convert a MPS Tensor to float64 dtype as the MPS framework doesn't support float64. Please use float32 instead.
-#         hr_patch_np = hr_patch_np.astype(np.float32)
-#         lr_patch_np = lr_patch_np.astype(np.float32)
+#         hr_patch_np = hr_patch_np.astype(np.float32) / 255.0
+#         lr_patch_np = lr_patch_np.astype(np.float32) / 255.0
 #
 #         # 4. 두 NumPy 배열을 각각 PyTorch 텐서로 변환하고 [-1, 1]로 정규화합니다.
 #         hr_patch = self.tensor_transform(hr_patch_np)
