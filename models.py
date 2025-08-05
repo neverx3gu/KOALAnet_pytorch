@@ -88,11 +88,108 @@ class ResBlock(nn.Module):
     def forward(self, x):
         return x + self.res_block(x)
 
+class EncoderBlock(nn.Module):
+    """U-Net의 인코더 한 단계를 구성하는 블록 (Conv -> Res -> Res -> Relu -> Pool)"""
+    def __init__(self, in_channels, out_channels): # in_channels = 3, out_channels = 64
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.res_block1 = ResBlock(out_channels)
+        self.res_block2 = ResBlock(out_channels)
+        self.relu = nn.ReLU()
+        self.pool = nn.MaxPool2d(2)
 
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.res_block1(x)
+        x = self.res_block2(x)
+        x = self.relu(x)
+        skip_connection = x  # 디코더로 전달할 연결
+        pooled_x = self.pool(x)
+        return pooled_x, skip_connection
+
+class DecoderBlock(nn.Module):
+    """U-Net의 디코더 한 단계를 구성하는 블록 (Deconv -> Concat -> Conv -> Res -> Res -> Relu)"""
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        # ConvTranspose2d는 Deconvolution이라고도 불리며, 이미지 크기를 키웁니다.
+        self.upconv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+        # Concat 이후 채널 수가 2배가 되므로, Conv의 입력 채널도 2배가 됩니다.
+        self.conv1 = nn.Conv2d(out_channels * 2, out_channels, kernel_size=3, padding=1)
+        self.res_block1 = ResBlock(out_channels)
+        self.res_block2 = ResBlock(out_channels)
+        self.relu = nn.ReLU()
+
+    def forward(self, x, skip_connection): # 입력 두 개 받음 (skip 포함)
+        x = self.upconv(x)
+        # skip_connection을 채널(dim=1) 방향으로 합칩니다.
+        x = torch.cat([x, skip_connection], dim=1)
+        x = self.conv1(x)
+        x = self.res_block1(x)
+        x = self.res_block2(x)
+        x = self.relu(x)
+        return x
+
+""" Training Stage 1 """
+class DownsamplingNetwork(nn.Module):
+    """
+    LR 이미지로부터 열화 커널을 예측하는 U-Net 기반 네트워크.
+    """
+
+    def __init__(self, in_channels=3, base_channels=64, kernel_size=20):
+        super().__init__()
+
+        # 인코더 부분
+        self.enc1 = EncoderBlock(in_channels, base_channels)  # 64 channels
+        self.enc2 = EncoderBlock(base_channels, base_channels * 2)  # 128 channels
+
+        # 병목(Bottleneck) 부분: 5 conv layers
+        self.bottleneck = nn.Sequential(
+            nn.Conv2d(base_channels * 2, base_channels * 4, kernel_size=3, padding=1), # 첫 번째 conv는 in_channel = 128
+            nn.ReLU(),
+            nn.Conv2d(base_channels * 4, base_channels * 4, kernel_size=3, padding=1), # 나머지는 256
+            nn.ReLU(),
+            nn.Conv2d(base_channels * 4, base_channels * 4, kernel_size=3, padding=1),  # 나머지는 256
+            nn.ReLU(),
+            nn.Conv2d(base_channels * 4, base_channels * 4, kernel_size=3, padding=1),  # 나머지는 256
+            nn.ReLU(),
+            nn.Conv2d(base_channels * 4, base_channels * 4, kernel_size=3, padding=1),  # 나머지는 256
+            nn.ReLU()
+        )
+
+        # 디코더 부분
+        self.dec1 = DecoderBlock(base_channels * 4, base_channels * 2)  # 128 channels
+        self.dec2 = DecoderBlock(base_channels * 2, base_channels)  # 64 channels
+
+        # 최종 커널 예측을 위한 헤드(Head)
+        self.head = nn.Sequential(
+            nn.Conv2d(base_channels, base_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            # 최종 출력 채널은 k*k (20*20=400)
+            nn.Conv2d(base_channels, kernel_size * kernel_size, kernel_size=3, padding=1)
+
+            # 마지막 정규화는 loss 계산할 때만 쓰고, 이미지 만들 때는 안씀...
+        )
+
+    def forward(self, x):
+        # 인코더 경로
+        x, skip1 = self.enc1(x)
+        x, skip2 = self.enc2(x)
+
+        # 병목
+        x = self.bottleneck(x)
+
+        # 디코더 경로 (skip connection 사용)
+        x = self.dec1(x, skip2)
+        x = self.dec2(x, skip1)
+
+        # 최종 커널 맵 출력
+        kernel_map = self.head(x)
+        return kernel_map
+
+""" Training Stage 2 """
 class UpsamplingBaselineNetwork(nn.Module):
     def __init__(self, scale_factor=4, channels=3, num_res_blocks=12):
         super().__init__()
-
         self.scale_factor = scale_factor
         self.up_kernel_size = 5  # 원본 up_kernel의 크기는 5
         ch = 64
