@@ -7,7 +7,6 @@ from tqdm import tqdm
 from models import DownsamplingNetwork, local_conv_ds, kernel_normalize
 from dataset import SISRDataset
 
-
 # --- 1. 커스텀 Sampler 정의 ---
 class EpochBasedSampler(Sampler):
     def __init__(self, data_source, num_samples_per_epoch):
@@ -53,7 +52,7 @@ def main():
     pin_memory_flag = True if device.type == 'cuda' else False
     data_loader = DataLoader(
         dataset, batch_size=BATCH_SIZE, sampler=epoch_sampler,
-        shuffle=False, num_workers=8, pin_memory=pin_memory_flag, persistent_workers=True
+        shuffle=False, num_workers=12, pin_memory=pin_memory_flag, persistent_workers=True
     )
 
     model = DownsamplingNetwork(kernel_size=DOWNSAMPLING_KERNEL_SIZE).to(device)
@@ -67,7 +66,7 @@ def main():
         model.train()
         progress_bar = tqdm(data_loader, desc=f"epoch [{epoch + 1}/{EPOCHS}]")
 
-        for lr_imgs, hr_imgs, gt_kernels in data_loader:
+        for lr_imgs, hr_imgs, gt_kernels in progress_bar:
             lr_imgs = lr_imgs.to(device)
             hr_imgs = hr_imgs.to(device)
             gt_kernels = gt_kernels.to(device)

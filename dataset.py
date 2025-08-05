@@ -98,7 +98,7 @@ class GenerateLR:
         # 4. 각 채널 결과를 합쳐서 최종 LR 이미지를 생성
         lr_img_np = np.stack(lr_channels, axis=2)
 
-        return lr_img_np
+        return lr_img_np, downsampling_k
 
 # --- 최종 데이터셋 클래스 ---
 class SISRDataset(Dataset):
@@ -135,7 +135,7 @@ class SISRDataset(Dataset):
         hr_patch_np = self.hr_base_transform(hr_image_pil)
 
         # 3. HR 패치(NumPy)를 입력으로 하여 LR 패치(NumPy)를 생성합니다.
-        lr_patch_np = self.lr_generator(hr_patch_np)
+        lr_patch_np, gt_kernel_np = self.lr_generator(hr_patch_np)
 
         # 텐서로 변환하기 전, NumPy 배열 타입을 float32로 명시합니다.
         # error 해결: TypeError: Cannot convert a MPS Tensor to float64 dtype as the MPS framework doesn't support float64. Please use float32 instead.
@@ -146,7 +146,9 @@ class SISRDataset(Dataset):
         hr_patch = self.tensor_transform(hr_patch_np)
         lr_patch = self.tensor_transform(lr_patch_np)
 
-        return lr_patch, hr_patch
+        gt_kernel = torch.from_numpy(gt_kernel_np.astype(np.float32))
+
+        return lr_patch, hr_patch, gt_kernel
 
     def __len__(self):
         return len(self.hr_image_paths)

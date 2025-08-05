@@ -102,7 +102,7 @@ def main():
 
         total_loss = 0.0
 
-        for lr_imgs, hr_imgs in progress_bar:
+        for lr_imgs, hr_imgs, _ in progress_bar:
             # 데이터를 설정된 장치(GPU 또는 CPU)로 이동
             lr_imgs = lr_imgs.to(device)
             hr_imgs = hr_imgs.to(device)
