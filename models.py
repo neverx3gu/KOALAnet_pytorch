@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 def kernel_normalize(kernel, kernel_size):
     """
-    커널의 합을 1로 정규화합니다.
+    커널의 합을 1로 정규화
     kernel shape: [B, k*k, s*s, H, W]
     """
     # k*k 차원(dim=1)을 기준으로 평균을 계산합니다.
@@ -16,7 +16,7 @@ def kernel_normalize(kernel, kernel_size):
 """ LR에 F_u로 local filtering -> HR prediction 만들기 """
 def local_conv_us(img, kernel, scale, kernel_size):
     """
-    PyTorch 버전의 local_conv_us (커널 정규화 포함).
+    PyTorch 버전의 local_conv_us (커널 정규화 포함)
     img: [B, C, H, W]       (예: [B, 3, 64, 64])
     kernel: [B, k*k*s*s, H, W] (예: [B, 400, 64, 64])
     scale: s                (예: 4)
@@ -26,25 +26,21 @@ def local_conv_us(img, kernel, scale, kernel_size):
 
     """ 이미지 준비 """
     """ 이미지는 출력 정보를 가지지 않아도 됨. 따라서 커널과 달리 s*s 를 가지는 축이 없음. """
-    # 1. 패치 추출 (Sliding window)
-    # 결과: [B, C*k*k, H*W] (예: [B, 75, 4096])
+    # 1. 패치 추출 (Sliding window), 결과: [B, C*k*k, H*W] (예: [B, 75, 4096])
     img_patches = F.unfold(img, kernel_size=kernel_size, padding=(kernel_size - 1) // 2)
 
-    # 2. 패치 재구성 (정보 분리)
-    # 결과: [B, C, k*k, H, W] (예: [B, 3, 25, 64, 64])
+    # 2. 패치 재구성 (정보 분리), 결과: [B, C, k*k, H, W] (예: [B, 3, 25, 64, 64])
     img_patches = img_patches.view(batch_size, channels, kernel_size * kernel_size, height, width)
 
     """ 커널 준비 """
-    # 1. 커널 재구성 (정보 분리)
-    # 결과: [B, k*k, s*s, H, W] (예: [B, 25, 16, 64, 64])
+    # 1. 커널 재구성 (정보 분리), 결과: [B, k*k, s*s, H, W] (예: [B, 25, 16, 64, 64])
     kernel = kernel.view(batch_size, kernel_size * kernel_size, scale * scale, height, width)
 
-    # 2. 커널 정규화 (형태는 변하지 않음)
+    # 2. 커널 정규화
     kernel = kernel_normalize(kernel, kernel_size)
 
     # 3. 채널에 맞게 커널 복제
-    # [B, k*k, s*s, H, W] -> unsqueeze(1) -> [B, 1, k*k, s*s, H, W]
-    # -> repeat -> [B, C, k*k, s*s, H, W] (예: [B, 3, 25, 16, 64, 64])
+    # [B, k*k, s*s, H, W] -> unsqueeze(1) -> [B, 1, k*k, s*s, H, W] -> repeat -> [B, C, k*k, s*s, H, W] (예: [B, 3, 25, 16, 64, 64])
     kernel = kernel.unsqueeze(1).repeat(1, channels, 1, 1, 1, 1)
 
     """ 로컬 필터링 (핵심 연산) """
@@ -78,20 +74,17 @@ def local_conv_us(img, kernel, scale, kernel_size):
 
 """ HR에 F_d로 local filtering -> LR prediction 만들기"""
 def local_conv_ds(img, kernel, scale, kernel_size):
-    """
-    예측된 커널로 HR 이미지를 다운샘플링하여 LR 이미지를 재구성
-    """
     batch_size, channels, height, width = img.shape
 
-    # extract_patches와 동일하지만, stride를 scale만큼 주어 다운샘플링 효과를 냅니다.
+    # local filtering 이므로 extract_patches와 동일하게 unfold 사용. 단 stride를 scale만큼 주어 다운샘플링
     img_patches = F.unfold(img, kernel_size=kernel_size, padding=(kernel_size - scale) // 2, stride=scale)
-    img_patches = img_patches.view(batch_size, channels, kernel_size * kernel_size, height // scale, width // scale)
+    img_patches = img_patches.view(batch_size, channels, kernel_size * kernel_size, height // scale, width // scale) # [B, C, k*k, H, W]
 
-    # 커널은 각 위치마다 하나씩 있으므로 공간 차원을 추가해줍니다.
+    # 커널은 각 위치마다 하나씩 있으므로 공간 차원을 추가
     # [B, k*k, H_lr, W_lr] -> [B, 1, k*k, H_lr, W_lr]
     kernel = kernel.view(batch_size, 1, kernel_size * kernel_size, height // scale, width // scale)
 
-    # 이미지 패치와 커널을 곱하고, 패치 차원(dim=2)으로 합산합니다.
+    # 이미지 패치와 커널을 곱하고, 패치 차원(dim=2)으로 sum
     result = torch.sum(img_patches * kernel, dim=2)
 
     return result
