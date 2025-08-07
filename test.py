@@ -1,4 +1,3 @@
-# python3 test.py --input_dir ./testset/DIV2K/LR/X4/imgs --hr_dir ./testset/DIV2K/HR --output_dir ./test_results
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
