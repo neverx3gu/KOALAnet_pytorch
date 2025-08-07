@@ -30,7 +30,7 @@ HR_DATA_DIR = './data/DIV2K_train_HR'
 # with preprocessed patch
 # LR_PREPROCESSED_DIR = './data/train_preprocessed/lr'
 # HR_PREPROCESSED_DIR = './data/train_preprocessed/hr'
-MODEL_SAVE_PATH = './koalanet_stage2.pth'
+MODEL_SAVE_PATH = 'pth/koalanet_stage2.pth'
 
 SCALE_FACTOR = 4
 PATCH_SIZE_LR = 64

@@ -26,9 +26,9 @@ class EpochBasedSampler(Sampler):
 # --- 2. 하이퍼파라미터 및 설정 ---
 HR_DATA_DIR = './data/DIV2K_train_HR'
 # Stage 1, 2에서 저장한 가중치 파일 경로
-STAGE1_WEIGHTS_PATH = './koalanet_stage1.pth'
-STAGE2_WEIGHTS_PATH = './koalanet_stage2.pth'
-MODEL_SAVE_PATH = './koalanet_stage3_final.pth'
+STAGE1_WEIGHTS_PATH = 'pth/koalanet_stage1.pth'
+STAGE2_WEIGHTS_PATH = 'pth/koalanet_stage2.pth'
+MODEL_SAVE_PATH = 'pth/koalanet_stage3_final.pth'
 
 SCALE_FACTOR = 4
 BATCH_SIZE = 8

@@ -23,7 +23,7 @@ class EpochBasedSampler(Sampler):
 
 # --- 2. 하이퍼파라미터 및 설정 ---
 HR_DATA_DIR = './data/DIV2K_train_HR'
-MODEL_SAVE_PATH = './koalanet_stage1.pth'
+MODEL_SAVE_PATH = 'pth/koalanet_stage1.pth'
 
 SCALE_FACTOR = 4
 PATCH_SIZE_LR = 64
